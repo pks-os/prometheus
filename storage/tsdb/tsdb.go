@@ -17,7 +17,6 @@ import (
 	"context"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
@@ -26,8 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -108,9 +106,6 @@ type adapter struct {
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
-	WALFlushInterval time.Duration
-
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration model.Duration
@@ -122,10 +117,20 @@ type Options struct {
 	WALSegmentSize units.Base2Bytes
 
 	// Duration for how long to retain data.
-	Retention model.Duration
+	RetentionDuration model.Duration
+
+	// Maximum number of bytes to be retained.
+	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
+
+	// When true it disables the overlapping blocks check.
+	// This in-turn enables vertical compaction and vertical query merge.
+	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 var (
@@ -185,11 +190,13 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
-		WALFlushInterval:  10 * time.Second,
-		WALSegmentSize:    int(opts.WALSegmentSize),
-		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
-		BlockRanges:       rngs,
-		NoLockfile:        opts.NoLockfile,
+		WALSegmentSize:         int(opts.WALSegmentSize),
+		RetentionDuration:      uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
+		MaxBytes:               int64(opts.MaxBytes),
+		BlockRanges:            rngs,
+		NoLockfile:             opts.NoLockfile,
+		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
+		WALCompression:         opts.WALCompression,
 	})
 	if err != nil {
 		return nil, err
@@ -235,12 +242,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	ms := make([]tsdbLabels.Matcher, 0, len(oms))
-
-	for _, om := range oms {
-		ms = append(ms, convertMatcher(om))
-	}
+func (q querier) Select(_ *storage.SelectParams, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	set, err := q.q.Select(ms...)
 	if err != nil {
 		return nil, nil, err
@@ -248,9 +250,15 @@ func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storag
 	return seriesSet{set: set}, nil, nil
 }
 
-func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
-func (q querier) LabelNames() ([]string, error)             { return q.q.LabelNames() }
-func (q querier) Close() error                              { return q.q.Close() }
+func (q querier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	v, err := q.q.LabelValues(name)
+	return v, nil, err
+}
+func (q querier) LabelNames() ([]string, storage.Warnings, error) {
+	v, err := q.q.LabelNames()
+	return v, nil, err
+}
+func (q querier) Close() error { return q.q.Close() }
 
 type seriesSet struct {
 	set tsdb.SeriesSet
@@ -264,15 +272,15 @@ type series struct {
 	s tsdb.Series
 }
 
-func (s series) Labels() labels.Labels            { return toLabels(s.s.Labels()) }
-func (s series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
+func (s series) Labels() labels.Labels            { return s.s.Labels() }
+func (s series) Iterator() storage.SeriesIterator { return s.s.Iterator() }
 
 type appender struct {
 	a tsdb.Appender
 }
 
 func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
-	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
+	ref, err := a.a.Add(lset, t, v)
 
 	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
@@ -305,36 +313,3 @@ func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error
 
 func (a appender) Commit() error   { return a.a.Commit() }
 func (a appender) Rollback() error { return a.a.Rollback() }
-
-func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
-	switch m.Type {
-	case labels.MatchEqual:
-		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
-
-	case labels.MatchNotEqual:
-		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
-
-	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return res
-
-	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return tsdbLabels.Not(res)
-	}
-	panic("storage.convertMatcher: invalid matcher type")
-}
-
-func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
-	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l))
-}
-
-func toLabels(l tsdbLabels.Labels) labels.Labels {
-	return *(*labels.Labels)(unsafe.Pointer(&l))
-}

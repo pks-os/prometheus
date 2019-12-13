@@ -163,12 +163,16 @@ func TestComputeExternalURL(t *testing.T) {
 
 // Let's provide an invalid configuration file and verify the exit status indicates the error.
 func TestFailedStartupExitCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 1
 
 	prom := exec.Command(promPath, "--config.file="+fakeInputFile)
 	err := prom.Run()
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 
 	if exitError, ok := err.(*exec.ExitError); ok {
 		status := exitError.Sys().(syscall.WaitStatus)
@@ -191,7 +195,7 @@ func TestSendAlerts(t *testing.T) {
 	}{
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -200,7 +204,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),
@@ -211,7 +215,7 @@ func TestSendAlerts(t *testing.T) {
 		},
 		{
 			in: []*rules.Alert{
-				&rules.Alert{
+				{
 					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
 					ActiveAt:    time.Unix(1, 0),
@@ -220,7 +224,7 @@ func TestSendAlerts(t *testing.T) {
 				},
 			},
 			exp: []*notifier.Alert{
-				&notifier.Alert{
+				{
 					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
 					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
 					StartsAt:     time.Unix(2, 0),
@@ -271,7 +275,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		}
 
 		err = prom.Wait()
-		testutil.NotOk(t, err, "")
+		testutil.NotOk(t, err)
 		if exitError, ok := err.(*exec.ExitError); ok {
 			status := exitError.Sys().(syscall.WaitStatus)
 			testutil.Equals(t, expectedExitStatus, status.ExitStatus())

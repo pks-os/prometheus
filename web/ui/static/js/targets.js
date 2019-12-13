@@ -21,7 +21,19 @@ function showUnhealthy(_, container) {
 }
 
 function init() {
-  $("button.targets").click(function () {
+  if ($("#unhealthy-targets").length) {
+    if (!localStorage.selectedTargetsTab || localStorage.selectedTargetsTab == "all-targets") {
+      $("#all-targets").parent().addClass("active");
+      $(".table-container").each(showAll);
+    } else if (localStorage.selectedTargetsTab == "unhealthy-targets") {
+      $("#unhealthy-targets").parent().addClass("active");
+      $(".table-container").each(showUnhealthy);
+    }
+  } else {
+    $(".table-container").each(showAll);
+  }
+
+  $("button.targets").click(function() {
     const tableTitle = $(this).closest("h2").find("a").attr("id");
 
     if ($(this).hasClass("collapsed-table")) {
@@ -45,8 +57,10 @@ function init() {
 
     if (target === "all-targets") {
       $(".table-container").each(showAll);
+      localStorage.setItem("selectedTargetsTab", "all-targets");
     } else if (target === "unhealthy-targets") {
       $(".table-container").each(showUnhealthy);
+      localStorage.setItem("selectedTargetsTab", "unhealthy-targets");
     }
   });
 }
