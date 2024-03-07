@@ -102,12 +102,12 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	// },
 }
 
-// requireEqualSamples checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.
-func requireEqualSamples(t *testing.T, expected, actual map[string][]chunks.Sample, ignoreCounterResets bool) {
+// requireEqualSeries checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.
+func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sample, ignoreCounterResets bool) {
 	for name, expectedItem := range expected {
 		actualItem, ok := actual[name]
 		require.True(t, ok, "Expected series %s not found", name)
-		compareSamples(t, name, expectedItem, actualItem, ignoreCounterResets)
+		requireEqualSamples(t, name, expectedItem, actualItem, ignoreCounterResets)
 	}
 	for name := range actual {
 		_, ok := expected[name]
@@ -122,7 +122,7 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 		"number of ooo appended samples mismatch")
 }
 
-func compareSamples(t *testing.T, name string, expected, actual []chunks.Sample, ignoreCounterResets bool) {
+func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sample, ignoreCounterResets bool) {
 	require.Equal(t, len(expected), len(actual), "Length not expected for %s", name)
 	for i, s := range expected {
 		expectedSample := s
