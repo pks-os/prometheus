@@ -31,10 +31,13 @@ import "gogoproto/gogo.proto";
 // the serialized message). See: https://github.com/prometheus/prometheus/issues/11908
 message Request {
   // symbols contains a de-duplicated array of string elements used for various
-  // items in a Request message, like labels and metadata items. To decode
-  // each of those items, referenced, by "ref(s)" suffix, you need to lookup the
-  // actual string by index from symbols array. The order of strings is up to
-  // the sender. The receiver should not assume any particular encoding.
+  // items in a Request message, like labels and metadata items. For the sender convenience
+  // around empty values for optional fields like unit_ref, symbols array MUST start with
+  // empty string.
+  //
+  // To decode each of the symbolized strings, referenced, by "ref(s)" suffix, you
+  // need to lookup the actual string by index from symbols array. The order of
+  // strings is up to the sender. The receiver should not assume any particular encoding.
   repeated string symbols = 1;
   // timeseries represents an array of distinct series with 0 or more samples.
   repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
@@ -115,7 +118,7 @@ message Sample {
 // Metadata represents the metadata associated with the given series' samples.
 message Metadata {
   enum MetricType {
-    METRIC_TYPE_UNSPECIFIED        = 0;
+    METRIC_TYPE_UNSPECIFIED    = 0;
     METRIC_TYPE_COUNTER        = 1;
     METRIC_TYPE_GAUGE          = 2;
     METRIC_TYPE_HISTOGRAM      = 3;
@@ -126,10 +129,12 @@ message Metadata {
   }
   MetricType type = 1;
   // help_ref is a reference to the Request.symbols array representing help
-  // text for the metric.
+  // text for the metric. Help is optional, reference should point to empty string in
+  // such a case.
   uint32 help_ref = 3;
   // unit_ref is a reference to the Request.symbols array representing unit
-  // for the metric.
+  // for the metric. Unit is optional, reference should point to empty string in
+  // such a case.
   uint32 unit_ref = 4;
 }
 
