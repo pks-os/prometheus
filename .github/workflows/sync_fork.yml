@@ -11,6 +11,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Fine-grained PAT with contents:write and workflows:write
+          # scopes
+          token: ${{ secrets.REPO_SYNC_TOKEN }}
       - name: Sync and merge upstream repository with your current repository
         uses: dabreadman/sync-upstream-repo@v1.3.0
         with:
@@ -21,4 +25,4 @@ jobs:
           # Branch to merge into downstream
           downstream_branch: main
           # GitHub Bot token
-          token: ${{secrets.REPO_SYNC_TOKEN}}
+          token: ${{secrets.GITHUB_TOKEN}}
